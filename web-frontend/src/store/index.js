@@ -26,6 +26,7 @@ const getDefaultState = () => {
     dependencies: [],
     dependency_map: {},
     rustsec: [],
+    health: [],
   }
 }
 
@@ -89,12 +90,12 @@ export default new Vuex.Store({
   mutations: {
     add_analysis(state, analysis) {
       // reset state if we're retrieving a different repo
-      if (state.repo != "" && analysis.repo != state.repo) {
+      if (state.repo != "" && analysis.repository != state.repo) {
         Object.assign(state, getDefaultState());
       }
 
       // extract
-      console.log(analysis);
+      console.log("analysis: ", analysis);
       state.repo = analysis.repository;
       state.commit = analysis.commit;
       state.date = new Date(analysis.timestamp).toString();
@@ -116,6 +117,17 @@ export default new Vuex.Store({
 
       // finally, set dependencies
       state.dependencies = dependencies;
+    },
+    add_health_analysis(state, analysis) {
+      if (state.repo != "" && analysis.repo != state.repo) {
+        Object.assign(state, getDefaultState());
+      }
+
+      // extract
+      console.log("health analysis", analysis);
+      state.repo = analysis.repository;
+      state.commit = analysis.commit;
+      state.health = analysis.dependency_health;
     }
   },
   actions: {
@@ -153,6 +165,40 @@ export default new Vuex.Store({
                 .join(", "),
             };
           }
+
+          // notification
+          return {
+            "success": true,
+          };
+        })
+        .catch((error) => {
+          return {
+            "error": error
+          };
+        });
+    },
+
+    get_health_analysis({ commit }, repo){
+      return axios
+        .get("dependencyhealth?repo=" + repo)
+        .then((response) => {
+          //
+          // Error handling
+          //
+
+          // TODO: return an error code from the server instead?
+          if (response.data.constructor == String) {
+            console.log("what the fuck?")
+            return {
+              "error": response.data,
+            };
+          }
+
+          //
+          // Retrieving data
+          //
+
+          commit("add_health_analysis", response.data);
 
           // notification
           return {

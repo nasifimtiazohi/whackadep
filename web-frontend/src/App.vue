@@ -129,10 +129,14 @@ export default {
     },
 
     // attempts to start an analysis on a given repo
+    // TODO: currently we do all analysis on referesh click which is not the best UI,
+    //       we can have have separate button for separate analysis types
+    //      also, when a new repository is selected, the page must be automatically refreshed to erase past values
     refresh() {
       axios.get("/refresh?repo=" + this.current_repo).then((response) => {
         if (response.data == "ok") {
           this.toast(
+            //QUESTION: How is this order maintained?
             "Refresh requested",
             "analysis started, please refresh the page in a bit...",
             "success"
@@ -248,6 +252,17 @@ export default {
         text: depkey,
         to: this.$route.path,
       });
+    } else if (this.$route.name == "dependency_health") {
+      this.current_repo = this.$route.params.repo;
+
+      this.breadcrumbs.push({
+        text: this.current_repo,
+        to: { name: "repo", params: { repo: this.current_repo } },
+      });
+      this.breadcrumbs.push({
+        text: "health metrics",
+      });
+
     }
   },
 
@@ -269,6 +284,18 @@ export default {
           text: this.current_repo,
           to: { name: "repo", params: { repo: this.current_repo } },
         });
+      }
+
+      // TODO: Need to add a button which will activate this route change
+      else if (to.name == 'dependency_health') {
+        this.current_repo = to.params.repo;
+        this.change_route(
+          {
+            text: this.current_repo,
+            to: { name: "repo", params: { repo: this.current_repo } },
+          }
+        );
+
       }
 
       // review

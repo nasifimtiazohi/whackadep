@@ -13,6 +13,7 @@ export default {
       this.toast("error", "error", "danger");
     }
 
+    // once repo is created, we call for an action on dependency analysis
     // get dependencies for a repo
     this.$store.dispatch("get_analysis", this.repo).then((res) => {
       // error
@@ -36,6 +37,20 @@ export default {
         );
       }
     });
+
+    // we also call for an action on health analysis at the same time
+    this.$store.dispatch("get_health_analysis", this.repo).then((res) => {
+      // error
+      if ("error" in res) {
+        this.toast("error", res["error"], "danger");
+        console.log("failed");
+      } else{
+        // TODO: how is this shown now? where to actually  show this?
+        this.toast("health analysis received");
+      }
+    });
+
+
   },
   methods: {
     // create a toast (a notification on the top right of the screen)
