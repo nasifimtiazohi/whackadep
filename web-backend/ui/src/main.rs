@@ -36,6 +36,7 @@ fn index() -> &'static str {
     "/\n\
     /refresh?repo=<REPO>\n\
     /dependencies?repo=<REPO>\n\
+    /dependencyhealth?repo=<REPO>\n\
     /repos\n\
     /add_repo"
 }
@@ -150,7 +151,40 @@ fn valid_repo_url(repo: &str) -> bool {
     if repo.is_empty() {
         return false;
     }
+
+    // TODO: check if RUST repository
+    // Eventually when scaled to different languages, we can add clause afterwards
     true
+}
+
+#[derive(Deserialize)]
+struct DependencyHealthQuery {
+    repo: String,
+}
+
+// obtains latest dependency health analysis for a repository
+async fn dependency_health(
+    app: App,
+    query: DependencyHealthQuery,
+) -> Result<String, warp::Rejection> {
+    // check if we have the repo in our config
+    let config = Config::new(app.db.clone());
+    match config.repo_exists(&query.repo).await {
+        Ok(true) => (),
+        Ok(false) => return Ok("add the repository first".to_string()),
+        Err(e) => {
+            error!("{}", e);
+            return Ok("error, check the logs".to_string());
+        }
+    };
+
+    // TEMPORARY: sending mock data, TODO: apply logic here
+    use std::fs;
+    let data = match fs::read_to_string("ui/src/mockdata.json") {
+        Ok(string) => string,
+        Err(error) => format!("no health data found due to {:?}", error).to_string(),
+    };
+    return Ok(data);
 }
 
 #[tokio::main]
@@ -206,6 +240,13 @@ async fn main() {
         .and(warp::query::<DependenciesQuery>())
         .and_then(dependencies);
 
+    // GET /dependencyhealth?<repo>
+    let dependency_health = warp::get()
+        .and(warp::path("dependencyhealth"))
+        .and(app.clone())
+        .and(warp::query::<DependencyHealthQuery>())
+        .and_then(dependency_health);
+
     // GET /repos
     let repos = warp::get()
         .and(warp::path("repos"))
@@ -222,6 +263,7 @@ async fn main() {
     let routes = index
         .or(refresh)
         .or(dependencies)
+        .or(dependency_health)
         .or(repos)
         .or(add_repo)
         .with(warp::log("requests"))

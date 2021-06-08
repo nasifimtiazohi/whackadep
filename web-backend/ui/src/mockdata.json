@@ -1,0 +1,41 @@
+{
+    "repository":"https://github.com/diem/diem",
+    "commit":"006b25c33c9a741d9f5a7f6550e841a16477fd80",
+    "dependency_health":
+        [
+            {
+                "name" : "crate_a",
+                "version" : "1.2.4",
+                "type": "direct",
+                "dev": true,
+                "unsafe lines": 45,
+                "forbids unsafe": false,
+                "lines of code": 11345,
+                "downloads": 1234,
+                "github stars": 44,
+                "dependant crates": 33,
+                "activity level": "17 days ago",
+                "dependencies": "placeholder",
+                "OSSF": "placeholder",
+                "build.rs": "placeholder",
+                "git tag": "placeholder"
+            },
+            {
+                "name" : "crate_b",
+                "version" : "2.3.4",
+                "type": "transitive",
+                "dev": false,
+                "unsafe lines": 0,
+                "forbids unsafe": true,
+                "lines of code": 11345,
+                "downloads": 1234,
+                "github stars": 44,
+                "dependant crates": 33,
+                "activity level": "17 days ago",
+                "dependencies": "placeholder",
+                "OSSF": "placeholder",
+                "build.rs": "placeholder",
+                "git tag": "placeholder"
+            }
+        ]
+}
