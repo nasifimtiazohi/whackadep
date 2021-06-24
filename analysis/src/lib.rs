@@ -7,6 +7,7 @@ use tabled::Tabled;
 mod code;
 mod cratesio;
 mod github;
+mod ossf;
 
 #[derive(Tabled)]
 pub struct DependencyReport<'a> {
