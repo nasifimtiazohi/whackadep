@@ -6,7 +6,9 @@
 use anyhow::Result;
 use guppy::graph::{PackageGraph, PackageMetadata};
 use serde::{Deserialize, Serialize};
-use std::{cell::RefCell, collections::HashSet};
+use std::{cell::RefCell, collections::HashSet, fs::File};
+use tempfile::{tempdir};
+use reqwest::blocking::Client;
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct PackageOSSFReport {
@@ -64,6 +66,25 @@ impl OSSFClient {
 
         Ok(())
     }
+
+    fn download_latest_ossf_data() -> Result<()> {
+        // let download_url = "https://storage.googleapis.com/ossf-scorecards/latest.json";
+        // let client = Client::new();
+
+        // let dir = tempdir()?;
+        // let dest_path = dir.path().join("ossf-latest.json");
+        // let mut file = File::create(&dest_path)?;
+        // let mut response = client.get(download_url).send()?;
+        // copy(&mut response, &mut file);
+
+        let download_url = "https://storage.googleapis.com/ossf-scorecards/latest.json";
+        let client = Client::new();
+        let response = client.get(download_url).send()?;
+        let response = response.json()?;
+        println!("{:?}",response);
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -84,5 +105,10 @@ mod test {
         let graph = get_test_graph();
         let ossf_client = OSSFClient::new();
         ossf_client.get_ossf_reports(&graph).unwrap();
+    }
+
+    #[test]
+    fn test_ossf_download() {
+        OSSFClient::download_latest_ossf_data().unwrap();
     }
 }
