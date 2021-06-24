@@ -80,7 +80,9 @@ impl OSSFClient {
         let download_url = "https://storage.googleapis.com/ossf-scorecards/latest.json";
         let client = Client::new();
         let response = client.get(download_url).send()?;
-        let response = response.json()?;
+        let response = format!("[{}]", response.text()?);
+        println!("hmm");
+        let response: serde_json::Value = serde_json::from_str(&response)?;
         println!("{:?}",response);
 
         Ok(())
