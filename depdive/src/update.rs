@@ -83,6 +83,7 @@ pub struct VersionDiffStats {
     pub insertions: u64,
     pub deletions: u64,
     pub modified_build_scripts: HashSet<String>, // Empty indicates no change in build scripts
+    pub unsafe_stats: VersionUnsafeDiffStats,
 }
 
 #[derive(Debug, Clone)]
@@ -94,6 +95,22 @@ pub enum VersionConflict {
         direct_dep_version: Version,
         transitive_dep_version: Version,
     },
+}
+
+#[derive(Debug, Clone)]
+pub struct VersionUnsafeDiffStats {
+    pub files_changed_containing_unsafe_code: u64,
+    pub files_requiring_review: Vec<String>, // Files potentially containing unsafe change
+    pub files_unsafe_change_stats: Vec<FileUnsafeChangeStats>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum UnsafeCodeChangeStatus {
+    UnsafeCounterModified, // when we have a delta in unsafe counter
+    NoUnsafeCode,          // changed file(s) contained no unsafe code before and after change
+    UnsafeCodeRemoved,     // there was unsafe code before the change that got removed
+    RequiresManualReview,  // changed files contain unsafe code,
+                           // TODO: our tool isn't that smart yet to verify if unsafe code lines have been changed
 }
 
 #[derive(Debug, Clone)]
@@ -115,6 +132,16 @@ pub struct UnsafeDelta {
     pub impls: i64,
     pub traits: i64,
     pub methods: i64,
+}
+
+impl UnsafeDelta {
+    pub fn has_no_change(&self) -> bool {
+        self.expressions == 0
+            && self.functions == 0
+            && self.impls == 0
+            && self.traits == 0
+            && self.methods == 0
+    }
 }
 
 impl Sub for UnsafeDelta {
@@ -493,11 +520,28 @@ impl UpdateAnalyzer {
                 .map(|path| path.to_string())
                 .collect();
 
+            let files_unsafe_change_stats =
+                Self::analyze_unsafe_changes_in_diff(&version_diff_info)?;
+
             Ok(Some(VersionDiffStats {
                 files_changed: stats.files_changed() as u64,
                 insertions: stats.insertions() as u64,
                 deletions: stats.deletions() as u64,
                 modified_build_scripts,
+                unsafe_stats: VersionUnsafeDiffStats {
+                    files_changed_containing_unsafe_code:
+                        Self::get_files_changed_containing_unsafe_code(&files_unsafe_change_stats),
+                    files_requiring_review: Self::get_files_with_potenital_unsafe_changes(
+                        &files_unsafe_change_stats,
+                    ),
+                    files_unsafe_change_stats: files_unsafe_change_stats
+                        .into_iter()
+                        .filter(|report| {
+                            Self::get_file_unsafe_change_status(report)
+                                != UnsafeCodeChangeStatus::NoUnsafeCode
+                        })
+                        .collect(),
+                },
             }))
         } else {
             // If repository, old version, or new version is none, there is no update diff
@@ -521,6 +565,55 @@ impl UpdateAnalyzer {
         }
 
         modified_file_paths.contains(path)
+    }
+
+    fn get_files_changed_containing_unsafe_code(
+        files_unsafe_change_stats: &[FileUnsafeChangeStats],
+    ) -> u64 {
+        let mut files_changed_containing_unsafe_code = 0;
+        for report in files_unsafe_change_stats {
+            match Self::get_file_unsafe_change_status(report) {
+                UnsafeCodeChangeStatus::NoUnsafeCode => (),
+                _ => {
+                    files_changed_containing_unsafe_code += 1;
+                }
+            }
+        }
+        files_changed_containing_unsafe_code
+    }
+
+    fn get_files_with_potenital_unsafe_changes(
+        files_unsafe_change_stats: &[FileUnsafeChangeStats],
+    ) -> Vec<String> {
+        let mut files: Vec<String> = Vec::new();
+        for report in files_unsafe_change_stats {
+            match Self::get_file_unsafe_change_status(&report) {
+                UnsafeCodeChangeStatus::UnsafeCounterModified => files.push(report.file.clone()),
+                UnsafeCodeChangeStatus::RequiresManualReview => files.push(report.file.clone()),
+                _ => (),
+            }
+        }
+        files
+    }
+
+    fn get_file_unsafe_change_status(report: &FileUnsafeChangeStats) -> UnsafeCodeChangeStatus {
+        if let Some(rs_file_metrics) = &report.unsafe_status {
+            match (
+                report.unsafe_delta.has_no_change(),
+                rs_file_metrics.counters.has_unsafe(),
+            ) {
+                (true, true) => UnsafeCodeChangeStatus::RequiresManualReview,
+                (true, false) => UnsafeCodeChangeStatus::NoUnsafeCode,
+                (false, true) => UnsafeCodeChangeStatus::UnsafeCounterModified,
+                (false, false) => UnsafeCodeChangeStatus::UnsafeCodeRemoved,
+            }
+        } else {
+            // File deleted
+            match report.unsafe_delta.has_no_change() {
+                true => UnsafeCodeChangeStatus::NoUnsafeCode,
+                false => UnsafeCodeChangeStatus::UnsafeCodeRemoved,
+            }
+        }
     }
 
     fn analyze_unsafe_changes_in_diff(
@@ -633,8 +726,8 @@ impl UpdateAnalyzer {
 #[cfg(test)]
 mod test {
     use super::{
-        DependencyType, DiffAnalyzer, PackageGraph, StandardFeatures, UpdateAnalyzer,
-        VersionConflict::DirectTransitiveVersionConflict,
+        DependencyType, DiffAnalyzer, PackageGraph, StandardFeatures, UnsafeCodeChangeStatus,
+        UpdateAnalyzer, VersionConflict::DirectTransitiveVersionConflict,
     };
     use crate::diff::trim_remote_url;
     use guppy::{CargoMetadata, MetadataCommand};
@@ -829,6 +922,25 @@ mod test {
                     .unwrap()
                     .modified_build_scripts
                     .is_empty());
+                assert_eq!(
+                    report
+                        .diff_stats
+                        .as_ref()
+                        .unwrap()
+                        .unsafe_stats
+                        .files_changed_containing_unsafe_code,
+                    0
+                );
+                assert_eq!(
+                    report
+                        .diff_stats
+                        .as_ref()
+                        .unwrap()
+                        .unsafe_stats
+                        .files_unsafe_change_stats
+                        .len(),
+                    0
+                );
             }
         }
         println!("{:?}", update_review_reports);
@@ -872,6 +984,25 @@ mod test {
                         .modified_build_scripts
                         .len(),
                     1
+                );
+                assert_eq!(
+                    report
+                        .diff_stats
+                        .as_ref()
+                        .unwrap()
+                        .unsafe_stats
+                        .files_changed_containing_unsafe_code,
+                    12
+                );
+                assert_eq!(
+                    report
+                        .diff_stats
+                        .as_ref()
+                        .unwrap()
+                        .unsafe_stats
+                        .files_unsafe_change_stats
+                        .len(),
+                    12
                 );
             }
         }
@@ -984,7 +1115,7 @@ mod test {
 
     #[test]
     #[serial]
-    fn test_update_geiger() {
+    fn test_update_geiger_file_scanning() {
         let name = "test_unsafe";
         let repository = "https://github.com/nasifimtiazohi/test-version-tag";
         let diff_analyzer = DiffAnalyzer::new().unwrap();
@@ -1019,6 +1150,16 @@ mod test {
         assert_eq!(file.unsafe_delta.impls, 0);
         assert_eq!(file.unsafe_delta.expressions, 0);
 
+        assert_eq!(
+            UpdateAnalyzer::get_files_changed_containing_unsafe_code(&files_unsafe_change_stats),
+            1
+        );
+        assert_eq!(
+            UpdateAnalyzer::get_files_with_potenital_unsafe_changes(&files_unsafe_change_stats)
+                .len(),
+            1
+        );
+
         let version_diff_info = diff_analyzer
             .get_version_diff_info(
                 &name,
@@ -1049,6 +1190,15 @@ mod test {
         assert_eq!(file.unsafe_delta.traits, 1);
         assert_eq!(file.unsafe_delta.impls, 0);
         assert_eq!(file.unsafe_delta.expressions, 2);
+        assert_eq!(
+            UpdateAnalyzer::get_files_changed_containing_unsafe_code(&files_unsafe_change_stats),
+            2
+        );
+        assert_eq!(
+            UpdateAnalyzer::get_files_with_potenital_unsafe_changes(&files_unsafe_change_stats)
+                .len(),
+            2
+        );
 
         let version_diff_info = diff_analyzer
             .get_version_diff_info(
@@ -1070,5 +1220,79 @@ mod test {
         // but the total counter remains same
         // TODO: how to detect such changes?
         assert_eq!(file.unsafe_delta.expressions, 0);
+        assert_eq!(
+            UpdateAnalyzer::get_files_changed_containing_unsafe_code(&files_unsafe_change_stats),
+            1
+        );
+        assert_eq!(
+            UpdateAnalyzer::get_files_with_potenital_unsafe_changes(&files_unsafe_change_stats)
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn test_update_unsafe_change_status() {
+        let name = "test_unsafe";
+        let repository = "https://github.com/nasifimtiazohi/test-version-tag";
+        let diff_analyzer = DiffAnalyzer::new().unwrap();
+        let repo = diff_analyzer.get_git_repo(&name, &repository).unwrap();
+
+        let version_diff_info = diff_analyzer
+            .get_version_diff_info(
+                &name,
+                &repo,
+                &Version::parse("2.6.0").unwrap(),
+                &Version::parse("3.1.0").unwrap(),
+            )
+            .unwrap();
+        let files_unsafe_change_stats =
+            UpdateAnalyzer::analyze_unsafe_changes_in_diff(&version_diff_info).unwrap();
+
+        println!("{:?}", files_unsafe_change_stats);
+
+        for report in &files_unsafe_change_stats {
+            if report.file == "src/main.rs" {
+                assert_eq!(
+                    UpdateAnalyzer::get_file_unsafe_change_status(&report),
+                    UnsafeCodeChangeStatus::RequiresManualReview
+                );
+            }
+            if report.file == "src/newanother.rs" {
+                assert_eq!(
+                    UpdateAnalyzer::get_file_unsafe_change_status(&report),
+                    UnsafeCodeChangeStatus::UnsafeCounterModified
+                );
+            }
+            if report.file == "src/unsafefiletoremove.rs" {
+                assert_eq!(
+                    UpdateAnalyzer::get_file_unsafe_change_status(&report),
+                    UnsafeCodeChangeStatus::UnsafeCodeRemoved
+                );
+            }
+            if report.file == "src/unsafetoremove.rs" {
+                assert_eq!(
+                    UpdateAnalyzer::get_file_unsafe_change_status(&report),
+                    UnsafeCodeChangeStatus::UnsafeCodeRemoved
+                );
+            }
+            if report.file == "src/nounsafe.rs" {
+                assert_eq!(
+                    UpdateAnalyzer::get_file_unsafe_change_status(&report),
+                    UnsafeCodeChangeStatus::NoUnsafeCode
+                );
+            }
+        }
+
+        assert_eq!(
+            UpdateAnalyzer::get_files_changed_containing_unsafe_code(&files_unsafe_change_stats),
+            4
+        );
+        assert_eq!(
+            UpdateAnalyzer::get_files_with_potenital_unsafe_changes(&files_unsafe_change_stats)
+                .len(),
+            2
+        );
     }
 }
