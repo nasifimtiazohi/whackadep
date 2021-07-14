@@ -118,8 +118,10 @@ pub struct FileUnsafeChangeStats {
     pub file: String,
     pub change_type: Delta,
     pub unsafe_delta: UnsafeDelta, // Delta in Unsafe counter:
-    // doesn't verify if unsafe code has not been touched
-    // TODO: detect if unsafe code has been touched in a diff
+    // Unsafe Delta cannot detect the case where a line is modified
+    // in which case the unsafe counter before and after will be the same
+    // TODO: detect if unsafe code has been modified in a diff
+
     // Below field indicate the post state of an added/modified file
     // and will be None in case of a deleted file
     pub unsafe_status: Option<RsFileMetrics>,
