@@ -83,7 +83,7 @@ pub struct VersionDiffStats {
     pub insertions: u64,
     pub deletions: u64,
     pub modified_build_scripts: HashSet<String>, // Empty indicates no change in build scripts
-    pub unsafe_change_stats: Vec<FileUnsafeChangeStats>,
+    pub unsafe_file_changed: Vec<FileUnsafeChangeStats>,
 }
 
 #[derive(Debug, Clone)]
@@ -524,7 +524,7 @@ impl UpdateAnalyzer {
                 insertions: stats.insertions() as u64,
                 deletions: stats.deletions() as u64,
                 modified_build_scripts,
-                unsafe_change_stats: files_unsafe_change_stats
+                unsafe_file_changed: files_unsafe_change_stats
                     .into_iter()
                     .filter(|report| {
                         report.unsafe_change_status != FileUnsafeCodeChangeStatus::NoUnsafeCode
@@ -897,7 +897,7 @@ mod test {
                         .diff_stats
                         .as_ref()
                         .unwrap()
-                        .unsafe_change_stats
+                        .unsafe_file_changed
                         .len(),
                     0
                 );
@@ -950,7 +950,7 @@ mod test {
                         .diff_stats
                         .as_ref()
                         .unwrap()
-                        .unsafe_change_stats
+                        .unsafe_file_changed
                         .len(),
                     12
                 );
