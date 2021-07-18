@@ -332,6 +332,15 @@ impl DiffAnalyzer {
         Ok(Repository::open(path)?)
     }
 
+    pub(crate) fn get_git_repo_for_cratesio_version(
+        &self,
+        name: &str,
+        version: &str,
+    ) -> Result<Repository> {
+        let path = self.get_cratesio_version(&name, &version)?;
+        self.init_git(&path)
+    }
+
     fn setup_remote(&self, repo: &Repository, url: &str, fetch_commit: &str) -> Result<()> {
         // Connect to remote
         let remote_name = "source";
@@ -777,12 +786,12 @@ mod test {
         let name = "guppy";
         let version_a = "0.8.0";
         let version_b = "0.9.0";
-
-        let path = diff_analyzer.get_cratesio_version(name, version_a).unwrap();
-        let repo_a = diff_analyzer.init_git(&path).unwrap();
-
-        let path = diff_analyzer.get_cratesio_version(name, version_b).unwrap();
-        let repo_b = diff_analyzer.init_git(&path).unwrap();
+        let repo_a = diff_analyzer
+            .get_git_repo_for_cratesio_version(&name, &version_a)
+            .unwrap();
+        let repo_b = diff_analyzer
+            .get_git_repo_for_cratesio_version(&name, &version_b)
+            .unwrap();
 
         let version_diff_info = diff_analyzer
             .get_version_diff_info_between_repos(&repo_a, &repo_b)
