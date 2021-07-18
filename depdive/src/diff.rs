@@ -501,6 +501,48 @@ impl DiffAnalyzer {
             diff,
         })
     }
+
+    // Takes two local repositories as input,
+    //     Presumably tw different version of the same code base initiated in different repos
+    //     For example, when comparing code for versions hosted on crates.io;
+    // and returns VersionDiffInfo between the heads of the two repositories
+    pub(crate) fn get_version_diff_info_between_repos<'a>(
+        &'a self,
+        repo_version_a: &'a Repository,
+        repo_version_b: &Repository,
+    ) -> Result<VersionDiffInfo<'a>> {
+        let version_a_commit = repo_version_a.head()?.peel_to_commit()?;
+        let version_a_tree = version_a_commit.tree()?;
+
+        // make repo_b a branch of repo_a
+        let head_b = repo_version_b.head()?.peel_to_commit()?;
+        self.setup_remote(
+            &repo_version_a,
+            &repo_version_b
+                .path()
+                .to_str()
+                .ok_or_else(|| anyhow!("no local path found for repository"))?
+                .to_string(),
+            &head_b.id().to_string(),
+        )?;
+
+        // Get head commit for repo_b branch on repo_a
+        let version_b_commit = repo_version_a.find_commit(head_b.id())?;
+        let version_b_tree = version_b_commit.tree()?;
+
+        let diff = repo_version_a.diff_tree_to_tree(
+            Some(&version_a_tree),
+            Some(&version_b_tree),
+            Some(&mut DiffOptions::new()),
+        )?;
+
+        Ok(VersionDiffInfo {
+            repo: &repo_version_a,
+            commit_a: version_a_commit.id(),
+            commit_b: version_b_commit.id(),
+            diff,
+        })
+    }
 }
 
 #[cfg(test)]
@@ -726,6 +768,30 @@ mod test {
         assert_eq!(diff.stats().unwrap().files_changed(), 6);
         assert_eq!(diff.stats().unwrap().insertions(), 199);
         assert_eq!(diff.stats().unwrap().deletions(), 82);
+    }
+
+    #[test]
+    #[serial]
+    fn test_diff_version_diff_from_crates_io() {
+        let diff_analyzer = get_test_diff_analyzer();
+        let name = "guppy";
+        let version_a = "0.8.0";
+        let version_b = "0.9.0";
+
+        let path = diff_analyzer.get_cratesio_version(name, version_a).unwrap();
+        let repo_a = diff_analyzer.init_git(&path).unwrap();
+
+        let path = diff_analyzer.get_cratesio_version(name, version_b).unwrap();
+        let repo_b = diff_analyzer.init_git(&path).unwrap();
+
+        let version_diff_info = diff_analyzer
+            .get_version_diff_info_between_repos(&repo_a, &repo_b)
+            .unwrap();
+
+        let diff = version_diff_info.diff;
+        assert_eq!(diff.stats().unwrap().files_changed(), 9);
+        assert_eq!(diff.stats().unwrap().insertions(), 244);
+        assert_eq!(diff.stats().unwrap().deletions(), 179);
     }
 
     #[test]
