@@ -24,7 +24,7 @@ use std::{
 use url::Url;
 
 use crate::advisory::AdvisoryLookup;
-use crate::diff::{DiffAnalyzer, HeadCommitNotFoundError, VersionDiffInfo};
+use crate::diff::{DiffAnalyzer, VersionDiffInfo};
 
 #[derive(Debug, Clone)]
 pub enum DependencyType {
@@ -486,26 +486,19 @@ impl UpdateAnalyzer {
     fn analyze_version_diff(
         dep_change_info: &DependencyChangeInfo,
     ) -> Result<Option<VersionDiffStats>> {
-        if let (name, Some(repository), Some(old_version), Some(new_version)) = (
+        if let (name, Some(old_version), Some(new_version)) = (
             &dep_change_info.name,
-            &dep_change_info.repository,
             &dep_change_info.old_version,
             &dep_change_info.new_version,
         ) {
             let diff_analyzer = DiffAnalyzer::new()?;
-            let repo = diff_analyzer.get_git_repo(&name, &repository)?;
-            let version_diff_info = match diff_analyzer.get_version_diff_info(
-                &dep_change_info.name,
-                &repo,
-                &old_version,
-                &new_version,
-            ) {
-                Ok(info) => info,
-                Err(error) => match error.root_cause().downcast_ref::<HeadCommitNotFoundError>() {
-                    Some(_err) => return Ok(None),
-                    None => return Err(anyhow!("fatal error in fetching head commit")),
-                },
-            };
+
+            let repo_old_version =
+                diff_analyzer.get_git_repo_for_cratesio_version(&name, &old_version.to_string())?;
+            let repo_new_version =
+                diff_analyzer.get_git_repo_for_cratesio_version(&name, &new_version.to_string())?;
+            let version_diff_info = diff_analyzer
+                .get_version_diff_info_between_repos(&repo_old_version, &repo_new_version)?;
 
             let stats = version_diff_info.diff.stats()?;
 
@@ -532,7 +525,7 @@ impl UpdateAnalyzer {
                     .collect(),
             }))
         } else {
-            // If repository, old version, or new version is none, there is no update diff
+            // If old version, or new version is none, there is no update diff
             Ok(None)
         }
     }
@@ -883,9 +876,9 @@ mod test {
                     report.updated_version.version,
                     Version::parse("0.9.0").unwrap()
                 );
-                assert_eq!(report.diff_stats.as_ref().unwrap().files_changed, 6);
-                assert_eq!(report.diff_stats.as_ref().unwrap().insertions, 199);
-                assert_eq!(report.diff_stats.as_ref().unwrap().deletions, 82);
+                assert_eq!(report.diff_stats.as_ref().unwrap().files_changed, 9);
+                assert_eq!(report.diff_stats.as_ref().unwrap().insertions, 244);
+                assert_eq!(report.diff_stats.as_ref().unwrap().deletions, 179);
                 assert!(report
                     .diff_stats
                     .as_ref()
@@ -917,6 +910,8 @@ mod test {
         assert_eq!(update_review_reports.dep_update_review_reports.len(), 2);
         for report in &update_review_reports.dep_update_review_reports {
             if report.name == "libc" {
+                println!("{:?}", update_review_reports);
+
                 assert_eq!(report.prior_version.name, report.name);
                 assert_eq!(report.prior_version.name, report.updated_version.name);
                 assert_eq!(
@@ -933,9 +928,9 @@ mod test {
                     report.prior_version.downloads,
                     report.updated_version.downloads
                 );
-                assert_eq!(report.diff_stats.as_ref().unwrap().files_changed, 121);
-                assert_eq!(report.diff_stats.as_ref().unwrap().insertions, 19954);
-                assert_eq!(report.diff_stats.as_ref().unwrap().deletions, 5032);
+                assert_eq!(report.diff_stats.as_ref().unwrap().files_changed, 78);
+                assert_eq!(report.diff_stats.as_ref().unwrap().insertions, 1333);
+                assert_eq!(report.diff_stats.as_ref().unwrap().deletions, 4942);
                 assert_eq!(
                     report
                         .diff_stats
@@ -956,7 +951,6 @@ mod test {
                 );
             }
         }
-        println!("{:?}", update_review_reports);
     }
 
     #[test]
@@ -1072,7 +1066,7 @@ mod test {
         let repo = diff_analyzer.get_git_repo(&name, &repository).unwrap();
 
         let version_diff_info = diff_analyzer
-            .get_version_diff_info(
+            ._get_version_diff_info(
                 &name,
                 &repo,
                 &Version::parse("2.0.0").unwrap(),
@@ -1101,7 +1095,7 @@ mod test {
         assert_eq!(file.unsafe_delta.expressions, 0);
 
         let version_diff_info = diff_analyzer
-            .get_version_diff_info(
+            ._get_version_diff_info(
                 &name,
                 &repo,
                 &Version::parse("2.1.0").unwrap(),
@@ -1132,7 +1126,7 @@ mod test {
         assert_eq!(file.unsafe_delta.expressions, 2);
 
         let version_diff_info = diff_analyzer
-            .get_version_diff_info(
+            ._get_version_diff_info(
                 &name,
                 &repo,
                 &Version::parse("2.4.0").unwrap(),
@@ -1162,7 +1156,7 @@ mod test {
         let repo = diff_analyzer.get_git_repo(&name, &repository).unwrap();
 
         let version_diff_info = diff_analyzer
-            .get_version_diff_info(
+            ._get_version_diff_info(
                 &name,
                 &repo,
                 &Version::parse("2.6.0").unwrap(),
