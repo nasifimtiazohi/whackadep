@@ -653,6 +653,13 @@ impl UpdateAnalyzer {
         let post_graph = MetadataCommand::new().current_dir(path_b).build_graph()?;
         UpdateAnalyzer::get_summary_report(&prior_graph, &post_graph)
     }
+
+    pub fn cmd_update_review(old: &str, new: &str) -> Result<()> {
+        let report = Self::run_update_analyzer_from_paths(&Path::new(old), &Path::new(new))?
+            .unwrap_or_default();
+        println!("{}", report);
+        Ok(())
+    }
 }
 
 #[cfg(test)]

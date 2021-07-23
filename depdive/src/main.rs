@@ -1,43 +1,36 @@
 use anyhow::Result;
-use depdive::{
-    DependencyGraphAnalyzer, TabledCrateSourceDiffReport, TabledCratesioReport, TabledGitHubReport,
-};
-use guppy::MetadataCommand;
-use tabled::{Style, Table};
+use depdive::UpdateAnalyzer;
+use structopt::StructOpt;
+
+#[derive(Debug, StructOpt)]
+#[structopt(about = "Rust dependency analysis")]
+struct Args {
+    #[structopt(subcommand)]
+    cmd: Command,
+}
+
+#[derive(Debug, StructOpt)]
+enum Command {
+    #[structopt(name = "update-review")]
+    // Generate update review from two paths
+    UpdateReview { old: String, new: String },
+}
+
+// Copied from cargo-guppy
+fn args() -> impl Iterator<Item = String> {
+    let mut args: Vec<String> = ::std::env::args().collect();
+
+    if args.len() >= 2 {
+        args.remove(1);
+    }
+
+    args.into_iter()
+}
 
 fn main() -> Result<()> {
-    let graph = MetadataCommand::new().build_graph()?;
+    let args = Args::from_iter(args());
 
-    let depdive_report = DependencyGraphAnalyzer.analyze_dep_graph(&graph)?;
-
-    let table: Vec<TabledCratesioReport> = depdive_report
-        .crate_stats
-        .iter()
-        .map(|r| r.tabled_cratesio_report.clone())
-        .collect();
-    let table = Table::new(table).with(Style::github_markdown()).to_string();
-    println!("{}", table);
-
-    let table: Vec<TabledGitHubReport> = depdive_report
-        .crate_stats
-        .iter()
-        .map(|r| r.tabled_github_report.clone())
-        .collect();
-    let table = Table::new(table).with(Style::github_markdown()).to_string();
-    println!("{}", table);
-
-    let table: Vec<TabledCrateSourceDiffReport> = depdive_report
-        .crate_stats
-        .iter()
-        .map(|r| r.tabled_crate_source_diff_report.clone())
-        .collect();
-    let table = Table::new(table).with(Style::github_markdown()).to_string();
-    println!("{}", table);
-
-    let table = Table::new(depdive_report.code_stats)
-        .with(Style::github_markdown())
-        .to_string();
-    println!("{}", table);
-
-    Ok(())
+    match args.cmd {
+        Command::UpdateReview { old, new } => UpdateAnalyzer::cmd_update_review(&old, &new),
+    }
 }
